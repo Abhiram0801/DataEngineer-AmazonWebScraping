@@ -1,0 +1,95 @@
+NapQueens Test Assignment
+Candidate Name: K. ABHIRAM
+University Reg. No: 20MIS0220\
+
+Amazon Web Scraping
+Task: Scrape Amazon Best Sellers and Store Data in PostgreSQL
+Objective: Scrape the first two pages of Amazon Best Sellers of any category, capturing rank, title, price, ASIN, review count, stars, and category node. Handle dynamic loading of products and store the data in a PostgreSQL database.
+
+Create table schema in Postgre:
+CREATE TABLE amazon_products (
+id SERIAL PRIMARY KEY,
+rank INTEGER,
+title TEXT,
+price NUMERIC,
+asin TEXT,
+review_count INTEGER,
+stars NUMERIC,
+category_node TEXT
+);
+
+Set Up Puppeteer for Web Scraping
+Install Puppeteer:
+npm install puppeteer
+
+SCRIPT:
+const puppeteer = require('puppeteer');
+(async () => {
+const browser = await puppeteer.launch();
+const page = await browser.newPage();
+try {
+await page.goto('https://www.amazon.com/Best-Sellers/zgbs');
+const scrapeData = async () => {
+return page.evaluate(() => {
+let products = [];
+document.querySelectorAll('.zg-item-immersion').forEach((product) => {
+let rank = product.querySelector('.zg-badge-text').textContent.trim();
+let title = product.querySelector('div.p13n-sc-truncated').getAttribute('title');
+let price = product.querySelector('.p13n-sc-price').textContent.trim().replace('$', '');
+let asin = product.getAttribute('data-asin');
+let review_count = product.querySelector('.a-size-small.a-link-normal').textContent.trim().replace(',', '');
+let stars = parseFloat(product.querySelector('.a-icon-alt').textContent.split(' ')[0]);
+let category_node = product.querySelector('.zg-item').getAttribute('name');
+products.push({ rank, title, price, asin, review_count, stars, category_node });
+});
+return products;
+});
+};
+let scrapedData = [];
+// Retry mechanism with increased timeout
+await page.waitForSelector('.zg-item-immersion', { timeout: 60000 }); // Wait for products container
+for (let i = 0; i < 2; i++) {
+scrapedData = scrapedData.concat(await scrapeData());
+// Simulate clicking "Next" button
+await page.click('.zg-pagination .a-last');
+await page.waitForTimeout(2000); // Wait for products to load (adjust as needed)
+}
+// Store data in PostgreSQL
+const { Client } = require('pg');
+const client = new Client({
+user: 'postgre',
+host: 'localhost',
+database: 'scrape',
+password: '1234',
+port: 5432,
+});
+await client.connect();
+for (const product of scrapedData) {
+const query = `
+INSERT INTO amazon_products(rank, title, price, asin, review_count, stars, category_node)
+VALUES($1, $2, $3, $4, $5, $6, $7)
+RETURNING *;
+`;
+const values = [
+product.rank,
+product.title,
+product.price,
+product.asin,
+product.review_count,
+product.stars,
+product.category_node
+];
+try {
+const res = await client.query(query, values);
+console.log(Inserted product with id ${res.rows[0].id});
+} catch (err) {
+console.error(err.stack);
+}
+}
+await client.end();
+} catch (error) {
+console.error('Error:', error);
+} finally {
+await browser.close();
+}
+})();
